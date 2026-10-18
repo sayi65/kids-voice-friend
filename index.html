@@ -125,6 +125,27 @@
   .bubble.aya { justify-self: start; background: var(--aya); border-color: var(--aya-edge); border-bottom-left-radius: 6px; }
   .times { justify-self: start; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; padding-left: 6px; }
 
+  /* さんすうボード */
+  .mode-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .head-btns { display: flex; gap: 8px; }
+  .board-wrap { display: grid; gap: 12px; }
+  .board-wrap[hidden] { display: none; }
+  #board { width: 100%; aspect-ratio: 5 / 3; background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
+           box-shadow: var(--shadow); touch-action: none; cursor: crosshair; }
+  .problem { display: grid; gap: 8px; background: var(--panel); border: 2px solid var(--line); border-radius: 20px; padding: 14px; }
+  .problem textarea { min-height: 72px; }
+  .problem .row-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .problem .btn { font-size: 15px; padding: 10px 18px; }
+  .problem .msg { margin: 0; font-size: 14px; color: var(--ink-soft); }
+  .problem .msg a, .problem .msg code { word-break: break-all; }
+  .file-btn input { display: none; }
+  .photos { display: flex; gap: 8px; flex-wrap: wrap; min-height: 56px; align-items: center; }
+  .photos-empty { color: var(--ink-soft); font-size: 14px; font-weight: 500; }
+  .photo { position: relative; cursor: pointer; }
+  .photo input { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; accent-color: var(--accent); }
+  .photo img { display: block; width: 110px; height: 110px; object-fit: cover; border-radius: 12px; border: 3px solid var(--line); }
+  .photo input:checked + img { border-color: var(--accent); }
+
   /* せってい */
   dialog { border: 0; padding: 0; border-radius: 24px; width: min(560px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
   dialog::backdrop { background: rgba(20, 32, 52, .45); }
@@ -151,7 +172,10 @@
 <div class="app">
   <header>
     <h1 id="title">あやとおしゃべり</h1>
-    <button class="settings-btn" id="open-settings"><i class="ph-bold ph-gear-six" aria-hidden="true"></i>せってい</button>
+    <div class="head-btns">
+      <button class="settings-btn mode-btn" id="math-btn" aria-pressed="false"><i class="ph-bold ph-chalkboard-teacher" aria-hidden="true"></i>さんすうボード</button>
+      <button class="settings-btn" id="open-settings"><i class="ph-bold ph-gear-six" aria-hidden="true"></i>せってい</button>
+    </div>
   </header>
 
   <section class="stage idle" id="stage">
@@ -169,6 +193,27 @@
   </section>
 
   <section class="talk">
+    <div class="board-wrap" id="board-wrap" hidden>
+      <canvas id="board" aria-label="さんすうボード"></canvas>
+      <div class="problem">
+        <div class="field">しゃしん<small>スマホや このパソコンで とった しゃしんから、もんだいを えらんでね</small>
+          <div class="photos" id="photos"><span class="photos-empty" id="photos-empty">まだ しゃしんが ないよ</span></div>
+          <div class="row-btns">
+            <label class="btn stop file-btn"><input type="file" id="pc-photo" accept="image/*" multiple><i class="ph-bold ph-camera" aria-hidden="true"></i>しゃしんをえらぶ(なんまいでも)</label>
+            <button class="btn start" id="read-photos" disabled><i class="ph-bold ph-scan" aria-hidden="true"></i>えらんだ しゃしんから よむ</button>
+            <button class="btn stop" id="delete-photos" disabled><i class="ph-bold ph-trash" aria-hidden="true"></i>けす</button>
+          </div>
+        </div>
+        <label class="field">もんだい<small>よみとった もんだいを 見て、ちがっていたら なおしてね。文字で かいてもいいよ</small>
+          <textarea id="problem" maxlength="600" placeholder="例: 12このあめを 3人でおなじ数ずつ わけると、1人なんこ?"></textarea></label>
+        <div class="row-btns">
+          <button class="btn start" id="teach"><i class="ph-bold ph-chalkboard-teacher" aria-hidden="true"></i>これでおしえて</button>
+          <button class="btn stop" id="clear-board"><i class="ph-bold ph-eraser" aria-hidden="true"></i>ボードをけす</button>
+        </div>
+        <p class="msg" id="problem-msg"></p>
+        <p class="msg" id="phone-msg" hidden>スマホから おくるとき: 同じ Wi-Fi の スマホで <code id="phone-url"></code> を ひらいてね。<br>しゃしんを とると、この 画面に もんだいが でてくるよ。</p>
+      </div>
+    </div>
     <h2 class="talk-head">おしゃべりのきろく</h2>
     <div id="log" class="talk"></div>
   </section>
@@ -303,7 +348,7 @@
       while (pre.length * sec > PRE_ROLL) pre.shift();
       if (loud) { speech = pre.slice(); silent = 0; return; }
       quiet += sec;
-      if (quiet >= (turns === 0 ? FIRST_WAIT : NEXT_WAIT) && nudges < MAX_NUDGES) nudge();
+      if (quiet >= (turns === 0 ? FIRST_WAIT : NEXT_WAIT) && nudges < MAX_NUDGES && !math) nudge();
       return;
     }
     speech.push(frame);
@@ -343,7 +388,7 @@
     }
   }
 
-  function playAudio(current, b64) {
+  function playAudio(current, b64, draw) {
     return new Promise(async (resolve) => {
       try {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -351,6 +396,7 @@
         source.buffer = await current.ctx.decodeAudioData(bytes.buffer);
         source.connect(current.ctx.destination);
         source.onended = resolve;
+        if (draw?.length) boardDraw(draw, source.buffer.duration);  // 話しはじめと同時に書きはじめる
         source.start();
       } catch (e) {
         resolve();  // 「おわる」で AudioContext が閉じられたとき
@@ -361,11 +407,15 @@
   // サーバーから届く出来事(文字にした内容・1文ずつの声・終わり)を順に処理し、声は順番に流す
   async function converse(path, init, current, filler) {
     let queue = Promise.resolve();
-    const enqueue = (b64, speaking) => {
+    const enqueue = (b64, speaking, draw) => {
       queue = queue.then(() => {
         if (audio !== current) return;
         if (speaking) setPhase("speaking");
-        return playAudio(current, b64);
+        if (!b64) {  // 声がなく、書くだけの指示
+          boardDraw(draw, 1.2);
+          return new Promise((r) => setTimeout(r, 1200));
+        }
+        return playAudio(current, b64, draw);
       });
     };
     if (filler) enqueue(filler, false);
@@ -391,8 +441,9 @@
         if (e.type === "audio") {
           view = view || startTurn("", name());
           view.reply.append(e.text);
-          enqueue(e.audio, true);
+          enqueue(e.audio, true, e.draw);
         }
+        if (e.type === "draw") enqueue(null, false, e.draw);
         if (e.type === "done" && view) view.times.textContent = e.times;
       }
       if (done) break;
@@ -400,6 +451,239 @@
     await queue;
     setTimeout(() => { if (audio === current) listen(); }, AFTER_SPEAK * 1000);
   }
+
+
+  // ---- さんすうボード ----
+  // あやの文を話しはじめるのに合わせて、式や図を少しずつ書く。子どもも指やマウスで書きこめる
+  const BW = 800, BH = 480;
+  const boardEl = $("board"), bctx = boardEl.getContext("2d");
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+  boardEl.width = BW * DPR;
+  boardEl.height = BH * DPR;
+  let board = [], boardY = 16, strokes = [], boardDirty = true, math = false;
+  const num = (v, lo, hi, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+
+  // 指示を、場所を決めてボードの絵に直す。書くところがなくなったら、先に全部消す
+  function layout(cmd, args) {
+    const a = args.split(/\s+/).filter(Boolean);
+    if (cmd === "式") {
+      const text = args.slice(0, 40);
+      const size = text.length > 16 ? 34 : 46;
+      return { kind: "text", text, size, x: 28, y: 0, h: size + 22, len: text.length };
+    }
+    if (cmd === "点") {
+      const n = num(a[0], 1, 30, 1);
+      return { kind: "dots", n, h: Math.ceil(n / 18) * 40 + 12, len: n };
+    }
+    if (cmd === "箱") {
+      const groups = num(a[0], 1, 10, 1), each = num(a[1], 1, 12, 1);
+      const cols = Math.min(each, 4), boxW = cols * 32 + 20, boxH = Math.ceil(each / cols) * 32 + 20;
+      const perRow = Math.max(1, Math.floor((BW - 56) / (boxW + 18)));
+      return { kind: "boxes", groups, each, cols, boxW, boxH, perRow, h: Math.ceil(groups / perRow) * (boxH + 16) + 8, len: groups * each };
+    }
+    if (cmd === "数直線") {
+      const lo = num(a[0], -1000, 1000, 0), hi = num(a[1], lo + 1, lo + 1000, lo + 10);
+      const mark = a[2] !== undefined && a[2] !== "" ? parseInt(a[2], 10) : null;
+      return { kind: "line", lo, hi, mark: Number.isFinite(mark) ? mark : null, h: 110, len: 12 };
+    }
+    return null;
+  }
+
+  function boardDraw(cmds, seconds) {
+    const items = [];
+    for (const [name, args] of cmds) {
+      if (name === "消す") { board = []; boardY = 16; continue; }
+      const it = layout(name, args);
+      if (it) items.push(it);
+    }
+    // 1つの文のあいだに、順番に書いていく(長い式をゆっくり書きすぎない)
+    const now = performance.now();
+    let at = 0;
+    const share = items.length ? seconds / items.length : 0;
+    for (const it of items) {
+      if (boardY + it.h > BH - 8) { board = []; boardY = 16; }
+      it.y0 = boardY;
+      boardY += it.h;
+      it.t0 = now + at * 1000;
+      it.dur = Math.max(.4, Math.min(share, it.len * .3)) * 1000;
+      at += share;
+      board.push(it);
+    }
+    boardDirty = true;
+  }
+
+  function drawItem(it, p) {
+    const cs = getComputedStyle(document.documentElement);
+    const ink = cs.getPropertyValue("--ink"), accent = cs.getPropertyValue("--accent"), edge = cs.getPropertyValue("--aya-edge");
+    bctx.lineCap = bctx.lineJoin = "round";
+    if (it.kind === "text") {
+      bctx.fillStyle = ink;
+      bctx.font = `900 ${it.size}px "Zen Maru Gothic", "Hiragino Maru Gothic ProN", sans-serif`;
+      bctx.textBaseline = "top";
+      bctx.fillText(it.text.slice(0, Math.ceil(it.len * p)), it.x, it.y0 + 8);
+    } else if (it.kind === "dots") {
+      bctx.fillStyle = accent;
+      for (let i = 0; i < Math.ceil(it.n * p); i++) {
+        bctx.beginPath();
+        bctx.arc(40 + (i % 18) * 40, it.y0 + 26 + Math.floor(i / 18) * 40, 14, 0, 7);
+        bctx.fill();
+      }
+    } else if (it.kind === "boxes") {
+      const shown = Math.ceil(it.len * p);
+      for (let g = 0; g < it.groups; g++) {
+        if (g * it.each >= shown) break;
+        const bx = 28 + (g % it.perRow) * (it.boxW + 18), by = it.y0 + Math.floor(g / it.perRow) * (it.boxH + 16) + 4;
+        bctx.strokeStyle = edge; bctx.lineWidth = 4;
+        bctx.beginPath(); bctx.roundRect(bx, by, it.boxW, it.boxH, 14); bctx.stroke();
+        bctx.fillStyle = accent;
+        for (let i = 0; i < it.each && g * it.each + i < shown; i++) {
+          bctx.beginPath();
+          bctx.arc(bx + 26 + (i % it.cols) * 32, by + 26 + Math.floor(i / it.cols) * 32, 11, 0, 7);
+          bctx.fill();
+        }
+      }
+    } else if (it.kind === "line") {
+      const x0 = 40, x1 = BW - 40, y = it.y0 + 50, span = it.hi - it.lo;
+      bctx.strokeStyle = ink; bctx.fillStyle = ink; bctx.lineWidth = 4;
+      bctx.beginPath(); bctx.moveTo(x0, y); bctx.lineTo(x0 + (x1 - x0) * Math.min(1, p * 1.2), y); bctx.stroke();
+      bctx.font = '700 20px "Zen Maru Gothic", sans-serif'; bctx.textAlign = "center"; bctx.textBaseline = "top";
+      const step = span <= 20 ? 1 : Math.ceil(span / 10);
+      for (let v = it.lo; v <= it.hi; v += step) {
+        const x = x0 + (x1 - x0) * (v - it.lo) / span;
+        if (x > x0 + (x1 - x0) * Math.min(1, p * 1.2) + 1) break;
+        bctx.beginPath(); bctx.moveTo(x, y - 8); bctx.lineTo(x, y + 8); bctx.stroke();
+        bctx.fillText(String(v), x, y + 14);
+      }
+      if (it.mark !== null && it.mark >= it.lo && it.mark <= it.hi && p > .8) {
+        bctx.fillStyle = "#e5484d";
+        bctx.beginPath(); bctx.arc(x0 + (x1 - x0) * (it.mark - it.lo) / span, y, 11, 0, 7); bctx.fill();
+      }
+      bctx.textAlign = "start";
+    }
+  }
+
+  function renderBoard() {
+    const now = performance.now();
+    let animating = false;
+    for (const it of board) if (now < it.t0 + it.dur) animating = true;
+    if (boardDirty || animating) {
+      bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      bctx.clearRect(0, 0, BW, BH);
+      for (const it of board) {
+        if (now < it.t0) continue;
+        drawItem(it, Math.min(1, (now - it.t0) / it.dur));
+      }
+      bctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--you-edge");
+      bctx.lineWidth = 5; bctx.lineCap = bctx.lineJoin = "round";
+      for (const st of strokes) {
+        bctx.beginPath();
+        st.forEach(([x, y], i) => (i ? bctx.lineTo(x, y) : bctx.moveTo(x, y)));
+        if (st.length === 1) bctx.lineTo(st[0][0] + .1, st[0][1]);
+        bctx.stroke();
+      }
+      boardDirty = false;
+    }
+    requestAnimationFrame(renderBoard);
+  }
+  renderBoard();
+
+  function clearBoard() { board = []; strokes = []; boardY = 16; boardDirty = true; }
+  $("clear-board").onclick = clearBoard;
+  const boardPos = (e) => { const r = boardEl.getBoundingClientRect(); return [(e.clientX - r.left) * BW / r.width, (e.clientY - r.top) * BH / r.height]; };
+  boardEl.onpointerdown = (e) => { boardEl.setPointerCapture(e.pointerId); strokes.push([boardPos(e)]); boardDirty = true; };
+  boardEl.onpointermove = (e) => { if (e.buttons && strokes.length) { strokes[strokes.length - 1].push(boardPos(e)); boardDirty = true; } };
+
+  // ---- 問題を受け取る(スマホの写真、このページの写真、文字) ----
+  let inboxId = 0;
+  const problemMsg = (t) => { $("problem-msg").textContent = t; };
+  async function shrink(file) {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", .85).split(",")[1];
+  }
+  // 届いた写真を並べる。新しく届いたものは、はじめから選んだ状態にする
+  const known = new Set();
+  async function refreshPhotos() {
+    try {
+      const { ids } = await call("/photos");
+      const box = $("photos");
+      const fresh = ids.filter((id) => !known.has(id));
+      for (const id of fresh) {
+        known.add(id);
+        const label = document.createElement("label");
+        label.className = "photo";
+        label.dataset.id = id;
+        const check = Object.assign(document.createElement("input"), { type: "checkbox", checked: true });
+        check.onchange = photoButtons;
+        label.append(check, Object.assign(document.createElement("img"), { src: `/photos/${id}.jpg`, alt: "もんだいのしゃしん" }));
+        box.append(label);
+      }
+      for (const label of [...box.querySelectorAll(".photo")]) {
+        if (!ids.includes(Number(label.dataset.id))) label.remove();
+      }
+      $("photos-empty").hidden = ids.length > 0;
+      if (fresh.length) problemMsg(`しゃしんが ${fresh.length}まい とどいたよ。よみたい しゃしんを えらんでね。`);
+      photoButtons();
+    } catch (e) {}
+  }
+  const chosen = () => [...$("photos").querySelectorAll(".photo")].filter((l) => l.querySelector("input").checked).map((l) => Number(l.dataset.id));
+  function photoButtons() { $("read-photos").disabled = $("delete-photos").disabled = chosen().length === 0; }
+  $("pc-photo").onchange = async () => {
+    const files = [...$("pc-photo").files].slice(0, 6);
+    if (!files.length) return;
+    problemMsg(`${files.length}まい おくっているよ…`);
+    try {
+      await call("/photo", { images: await Promise.all(files.map(shrink)) });
+      await refreshPhotos();
+    } catch (e) { problemMsg(`おくれなかったよ: ${e.message}`); }
+    $("pc-photo").value = "";
+  };
+  $("read-photos").onclick = async () => {
+    const ids = chosen().slice(0, 6);
+    if (!ids.length) return;
+    $("read-photos").disabled = true;
+    problemMsg(`${ids.length}まい よみとっているよ。ちょっとまってね…`);
+    try {
+      const { text } = await call("/read", { ids });
+      $("problem").value = text;
+      problemMsg("よみとった もんだいを 見て、ちがっていたら なおしてね。");
+    } catch (e) { problemMsg(`よみとれなかったよ: ${e.message}`); }
+    photoButtons();
+  };
+  $("delete-photos").onclick = async () => {
+    try { await call("/photo/delete", { ids: chosen() }); } catch (e) {}
+    refreshPhotos();
+  };
+  // さんすうボードを開いているあいだ、スマホから写真が届いていないか見に行く
+  setInterval(() => { if (math && !document.hidden) refreshPhotos(); }, 2000);
+
+  $("teach").onclick = async () => {
+    const problem = $("problem").value.trim();
+    if (!problem) { problemMsg("もんだいを いれてね。"); return; }
+    if (!audio || phase !== "listening") { problemMsg("さきに「はじめる」をおして、「きいているよ」になってからおしてね。"); return; }
+    problemMsg("");
+    clearBoard();
+    const current = audio;
+    setPhase("thinking");
+    try {
+      await converse("/teach", { method: "POST", headers: { "Content-Type": "application/json" },
+                                 body: JSON.stringify({ problem }) }, current, null);
+    } catch (e) { if (audio === current) fail(e.message); }
+  };
+
+  // ふつうのおしゃべりと、さんすうボードを切りかえる
+  $("math-btn").onclick = () => {
+    math = !math;
+    $("math-btn").setAttribute("aria-pressed", String(math));
+    $("board-wrap").hidden = !math;
+    if (audio) call("/mode", { math }).catch(() => {});
+    if (math) refreshPhotos();
+    boardDirty = true;
+  };
 
   async function start() {
     try {
@@ -413,7 +697,7 @@
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
         .catch(() => { throw new Error("マイクがつかえないよ。ブラウザの設定でマイクをゆるしてね"); });
       ({ fillers } = await call("/start", { name: $("name").value, role: $("role").value, voice: $("voice").value,
-                                            style: $("style").value, child: $("child").value }));
+                                            style: $("style").value, child: $("child").value, math }));
       const proc = ctx.createScriptProcessor(2048, 1, 1);
       proc.onaudioprocess = (e) => onFrame(e.inputBuffer.getChannelData(0));
       ctx.createMediaStreamSource(stream).connect(proc);
@@ -466,6 +750,7 @@
     if (v && v.styles.includes(preferred)) $("style").value = preferred;
   }
   call("/defaults").then((d) => {
+    if (d.photo_url) { $("phone-url").textContent = d.photo_url; $("phone-msg").hidden = false; }
     $("name").value = d.name;
     $("role").value = d.role;
     $("child").value = d.child;

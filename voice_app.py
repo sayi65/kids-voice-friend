@@ -37,12 +37,30 @@ NUDGE_MEMO = ("(答えのメモ: {answer}。このメモは子どもが考える
               "判断するときに使う)")
 RECENT_TOPICS = 5  # 直近に使った話題はくり返さない
 FILLERS = ["うんうん", "ふむふむ"]
+MATH_TOKENS = 320  # 算数モードの返事の長さの上限(ボードの書き込みも含む)
+# 返事の中の [[式 12 ÷ 3 = 4]] のような、ボードに書く指示
+TAG = re.compile(r"\[\[(.*?)\]\]", re.S)
+BOARD_COMMANDS = {"式", "点", "箱", "数直線", "消す"}
+TEACH = ("(子どもが次の問題を教えてほしいと言っています。問題:「{problem}」。"
+         "最初の一歩だけを、ボードに書きながら教えて、答えやすい質問をひとつしてください。答えは言わないでください)")
+MAX_PHOTOS = 6
+READ_PROBLEM = ("この画像に書かれている算数・数学の問題を、そのまま日本語の文字で書き写してください。"
+                "図がある場合は、図の内容も短く説明してください。前置きや解説は不要で、問題の文だけを書いてください。"
+                "画像が複数あるときは、送られた順に、1つの問題の続き、または別の問題として書いてください。"
+                "問題がいくつかあるときは、「(1)」「(2)」のように番号をつけて分けてください。")
 # ここで区切って1文ずつ声にする
 SENTENCE_END = re.compile(r"[。！？!?\n]+")
 # 声を作る時間は文の長さにほぼ比例するので、最初の声だけは読点でも区切って早く出す
 FIRST_END = re.compile(r"[。！？!?\n、,]+")
 FIRST_MIN = 6  # 文字。これより短い固まりでは区切らない(「ねえ、」だけで切ると不自然なため)
 WARM_INTERVAL = 2  # 秒。3秒以上あけると温め自体が遅くなる回が出た
+
+# スマホ(やパソコン)から届いた問題の写真。パソコンの画面に並べて、子どもが選んだものを読む
+MAX_STORED = 20
+photos = []  # [{"id": 番号, "image": base64}]
+photo_seq = 0
+
+LAN_ON = "--lan" in sys.argv
 
 # 今の会話。START で作り、STOP で消す(使う人は一度に1人の想定)
 session = None
@@ -71,10 +89,14 @@ def start(body):
     if voice_file not in loaded_voices:
         loaded_voices[voice_file] = Voice(voice_file)
     name = body.get("name", "").strip() or main.CHARACTER_NAME
+    role = body.get("role", "").strip() or main.CHARACTER_ROLE
+    child = body.get("child", "").strip()
     session = {
         "name": name,
-        "persona": main.load_persona(name, body.get("role", "").strip() or main.CHARACTER_ROLE,
-                                     body.get("child", "").strip()),
+        "role": role,
+        "child": child,
+        "math": bool(body.get("math")),
+        "persona": main.load_persona(name, role, child, bool(body.get("math"))),
         "voice": loaded_voices[voice_file],
         "style": body.get("style") if body.get("style") in styles else styles[0],
         "history": [],
@@ -89,6 +111,57 @@ def start(body):
 
 def b64(wav):
     return base64.b64encode(wav).decode()
+
+
+# 話の途中で、ふつうのおしゃべりと算数ボードを切り替える。会話の記録は引きつがない
+def set_mode(s, math):
+    s["math"] = math
+    s["persona"] = main.load_persona(s["name"], s["role"], s["child"], math)
+    s["history"] = []
+
+
+# 写真に写っている問題を、文字にして返す。子どもが確かめて直せるよう、すぐには教え始めない
+def read_problem(images):
+    res = main.post(main.OLLAMA_URL, {
+        "model": main.MODEL, "stream": False, "think": False, "keep_alive": "30m", "options": {"num_predict": 600},
+        "messages": [{"role": "user", "content": READ_PROBLEM, "images": images[:MAX_PHOTOS]}],
+    })
+    return res["message"]["content"].strip()
+
+
+def add_photos(images):
+    global photo_seq
+    ids = []
+    for image in images[:MAX_STORED]:
+        photo_seq += 1
+        photos.append({"id": photo_seq, "image": image})
+        ids.append(photo_seq)
+    del photos[:-MAX_STORED]
+    return ids
+
+
+def stored_images(ids):
+    by_id = {p["id"]: p["image"] for p in photos}
+    return [by_id[i] for i in ids if i in by_id]
+
+
+# 返事から、ボードへの指示を取り出す。] がまだ届いていない途中の指示は、次に持ちこす
+def take_tags(buf):
+    cmds = []
+
+    def grab(m):
+        name, _, args = m.group(1).strip().partition(" ")
+        if name in BOARD_COMMANDS:
+            cmds.append([name, args.strip()])
+        return ""
+
+    clean = TAG.sub(grab, buf)
+    i = clean.find("[[")
+    if i >= 0:
+        return clean[:i], cmds, clean[i:]
+    if clean.endswith("["):
+        return clean[:-1], cmds, "["
+    return clean, cmds, ""
 
 
 def nudge_prompt(s):
@@ -132,26 +205,37 @@ def next_cut(text, is_first):
 # user_content への返事を作り、1文できるたびに声にして返す
 def speak(s, user_content, t0, recognized=""):
     reply, pending, first, mark = "", "", None, {}
+    held, cmds = "", []  # held: まだ ]] が届いていない指示。cmds: 次の文といっしょに送るボードへの指示
+    math = s["math"]
     s["responding"].set()
     try:
-        for piece in main.respond_stream(main.MODEL, s["persona"], user_content, s["history"]):
+        for piece in main.respond_stream(main.MODEL, s["persona"], user_content, s["history"],
+                                         MATH_TOKENS if math else 120):
             reply += piece
-            pending += piece
+            clean, new, held = take_tags(held + piece)
+            cmds += new
+            pending += clean
             while (m := next_cut(pending, first is None)):
                 sentence, pending = pending[:m.end()].strip(), pending[m.end():]
                 if sentence:
                     mark.setdefault("text", time.perf_counter())
-                    yield {"type": "audio", "text": sentence, "audio": b64(s["voice"].synthesize(sentence, s["style"]))}
+                    yield {"type": "audio", "text": sentence, "draw": cmds,
+                           "audio": b64(s["voice"].synthesize(sentence, s["style"]))}
+                    cmds = []
                     first = first or time.perf_counter()
     finally:
         s["responding"].clear()
     if pending.strip():
         mark.setdefault("text", time.perf_counter())
-        yield {"type": "audio", "text": pending.strip(), "audio": b64(s["voice"].synthesize(pending.strip(), s["style"]))}
+        yield {"type": "audio", "text": pending.strip(), "draw": cmds,
+               "audio": b64(s["voice"].synthesize(pending.strip(), s["style"]))}
+        cmds = []
         first = first or time.perf_counter()
+    if cmds:
+        yield {"type": "draw", "draw": cmds}
     s["history"] = (s["history"] + [
         {"role": "user", "content": user_content},
-        {"role": "assistant", "content": reply.strip()},
+        {"role": "assistant", "content": reply.strip()},  # 指示つきで残すと、次もボードの書き方がそろう
     ])[-HISTORY_TURNS * 2:]
     now = time.perf_counter()
     first = first or now
@@ -183,8 +267,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self.send(200, (main.HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+        elif self.path == "/photo":
+            self.send(200, (main.HERE / "photo.html").read_bytes(), "text/html; charset=utf-8")
+        elif self.path == "/photos":
+            self.send(200, {"ids": [p["id"] for p in photos]})
+        elif self.path.startswith("/photos/") and self.path.endswith(".jpg"):
+            image = stored_images([int(self.path[8:-4] or 0)])
+            if image:
+                self.send(200, base64.b64decode(image[0]), "image/jpeg")
+            else:
+                self.send(404, {"error": "not found"})
         elif self.path == "/defaults":
-            self.send(200, {"name": main.CHARACTER_NAME, "role": main.CHARACTER_ROLE, "child": main.CHILD_NAME,
+            ip = CERTS / "ip.txt"
+            photo_url = f"https://{ip.read_text().strip()}:{LAN_PORT}/photo" if LAN_ON and ip.exists() else ""
+            self.send(200, {"photo_url": photo_url, "name": main.CHARACTER_NAME, "role": main.CHARACTER_ROLE, "child": main.CHILD_NAME,
                             "style": main.STYLE_NAME, "voices": list_voices()})
         else:
             self.send(404, {"error": "not found"})
@@ -197,10 +293,30 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/stop":
                 stop()
                 self.send(200, {"ok": True})
-            elif self.path in ("/utterance", "/nudge"):
+            elif self.path == "/read":
+                images = stored_images(json.loads(raw).get("ids", []))[:MAX_PHOTOS]
+                if not images:
+                    self.send(400, {"error": "しゃしんが えらばれていません"})
+                else:
+                    self.send(200, {"text": read_problem(images)})
+            elif self.path == "/photo/delete":
+                gone = set(json.loads(raw).get("ids", []))
+                photos[:] = [p for p in photos if p["id"] not in gone]
+                self.send(200, {"ok": True})
+            elif self.path == "/photo":
+                self.send(200, {"ids": add_photos(json.loads(raw)["images"])})
+            elif self.path == "/mode":
+                if session:
+                    set_mode(session, bool(json.loads(raw).get("math")))
+                self.send(200, {"ok": True})
+            elif self.path in ("/utterance", "/nudge", "/teach"):
                 s = session
                 if s is None:
                     self.send(409, {"error": "会話が始まっていません。「はじめる」を押してください"})
+                elif self.path == "/teach":
+                    problem = json.loads(raw)["problem"].strip()[:600]
+                    set_mode(s, True)
+                    self.send_events(speak(s, TEACH.format(problem=problem), time.perf_counter()))
                 elif self.path == "/nudge":
                     self.send_events(speak(s, nudge_prompt(s), time.perf_counter()))
                 else:

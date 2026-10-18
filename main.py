@@ -58,13 +58,15 @@ def is_allowed(comment):
     return not any(word in comment for word in NG_WORDS)
 
 
-def load_persona(name, role=CHARACTER_ROLE, child=""):
+def load_persona(name, role=CHARACTER_ROLE, child="", math=False):
     # 学校での呼び方に合わせて「さん」付けにする
     call = f"相手のことは「{child}さん」と呼ぶ。毎回ではなく、ときどき呼ぶ。" if child else "相手の呼び方は省く。"
-    return (HERE / "persona.txt").read_text().replace("{name}", name).replace("{role}", role).replace("{call}", call)
+    path = "persona_math.txt" if math else "persona.txt"
+    return ((HERE / path).read_text().replace("{name}", name).replace("{role}", role)
+            .replace("{call}", call).replace("{grade}", CHILD_GRADE))
 
 
-def chat_body(model, persona, comment, history, stream):
+def chat_body(model, persona, comment, history, stream, num_predict=120):
     return {
         "model": model,
         "messages": [
@@ -76,7 +78,7 @@ def chat_body(model, persona, comment, history, stream):
         # 思考モードは返答が遅れるだけなので切る
         "think": False,
         "keep_alive": "30m",
-        "options": {"num_predict": 120},
+        "options": {"num_predict": num_predict},
     }
 
 
@@ -86,8 +88,8 @@ def respond(model, persona, comment, history=()):
 
 
 # respond と同じだが、できた部分から少しずつ返す
-def respond_stream(model, persona, comment, history=()):
-    body = json.dumps(chat_body(model, persona, comment, history, True)).encode()
+def respond_stream(model, persona, comment, history=(), num_predict=120):
+    body = json.dumps(chat_body(model, persona, comment, history, True, num_predict)).encode()
     req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req) as res:
         for line in res:
