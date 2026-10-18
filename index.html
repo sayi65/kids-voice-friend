@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>あやとおしゃべり</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  :root {
+    --paper: #f7fbff;
+    --grid: #dde9f6;
+    --ink: #23324a;
+    --ink-soft: #52627a;
+    --accent: #2f6fdb;
+    --accent-deep: #1f55b3;
+    --on-accent: #ffffff;
+    --aya: #fff3bf;
+    --aya-edge: #f0dc85;
+    --you: #ddf5ea;
+    --you-edge: #a9dfc6;
+    --face: #ffe9d6;
+    --cheek: #ffb4a8;
+    --panel: #ffffff;
+    --line: #d5e2f1;
+    --error: #b42318;
+    --shadow: 0 6px 18px rgba(47, 92, 160, .14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #142034; --grid: #1d2c45; --ink: #eaf1fb; --ink-soft: #a9b8cf;
+      --accent: #6ea2ff; --accent-deep: #8db6ff; --on-accent: #0d1a30;
+      --aya: #3d3820; --aya-edge: #5e5530; --you: #1d3a31; --you-edge: #2f5a4b;
+      --face: #f3d9c2; --cheek: #f19c90; --panel: #1a2840; --line: #2a3c5c;
+      --error: #ff8a80; --shadow: 0 6px 18px rgba(0, 0, 0, .35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0; min-height: 100dvh; color: var(--ink);
+    font-family: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", sans-serif; font-weight: 500;
+    background-color: var(--paper);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  ::selection { background: var(--aya-edge); color: var(--ink); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 12px; }
+
+  .app { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px;
+         display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 880px) {
+    .app { grid-template-columns: 400px minmax(0, 1fr); align-items: start; padding-top: 32px; }
+    .stage { position: sticky; top: 16px; }
+  }
+
+  header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  h1 { margin: 0; font-size: clamp(20px, 6vw, 32px); font-weight: 900; letter-spacing: .02em; }
+  .settings-btn { font: inherit; font-weight: 700; color: var(--ink); background: var(--panel); border: 2px solid var(--line);
+                  border-radius: 999px; padding: 8px 14px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer;
+                  white-space: nowrap; flex-shrink: 0; }
+  .settings-btn:hover { border-color: var(--accent); }
+
+  /* ステージ: キャラクターと声の輪 */
+  .stage { background: var(--panel); border: 2px solid var(--line); border-radius: 28px; box-shadow: var(--shadow);
+           padding: 28px 20px 24px; display: grid; justify-items: center; gap: 18px; }
+  .orb { --level: 0; position: relative; width: 210px; height: 210px; display: grid; place-items: center; }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 6px solid var(--accent); opacity: 0;
+          transform: scale(calc(.82 + var(--level) * .3)); transition: transform .12s ease-out, opacity .3s; }
+  .ring.r2 { border-width: 3px; transform: scale(calc(.82 + var(--level) * .5)); }
+  .ring.breath { border-width: 2px; transform: scale(.84); }
+  .listening .ring { opacity: calc(.3 + var(--level) * .7); }
+  .listening .ring.r2 { opacity: calc(var(--level) * .5); }
+  .listening .ring.breath { opacity: .5; animation: breathe 2.4s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { transform: scale(.84); opacity: .5; } 50% { transform: scale(.96); opacity: .15; } }
+  .face { width: 160px; height: 160px; border-radius: 50%; background: var(--face); position: relative;
+          box-shadow: inset 0 -8px 0 rgba(0, 0, 0, .05); }
+  .eye { position: absolute; top: 62px; width: 14px; height: 18px; border-radius: 50%; background: #23324a; }
+  .eye.l { left: 46px; } .eye.r { right: 46px; }
+  .cheek { position: absolute; top: 88px; width: 22px; height: 12px; border-radius: 50%; background: var(--cheek); opacity: .7; }
+  .cheek.l { left: 28px; } .cheek.r { right: 28px; }
+  .mouth { position: absolute; left: 50%; top: 96px; width: 34px; height: 14px; margin-left: -17px;
+           border: 4px solid #23324a; border-top: 0; border-radius: 0 0 20px 20px; }
+  .speaking .mouth { animation: talk .28s ease-in-out infinite alternate; }
+  @keyframes talk { from { height: 8px; } to { height: 20px; border-radius: 0 0 22px 22px; } }
+
+  .bars { height: 44px; display: flex; gap: 6px; align-items: center; }
+  .bar { width: 9px; height: 8px; border-radius: 999px; background: var(--accent); opacity: .35; transition: height .1s ease-out, opacity .2s; }
+  .listening .bar { opacity: 1; }
+  .thinking .bar, .speaking .bar { opacity: .85; animation: hop .9s ease-in-out infinite; }
+  .speaking .bar { animation-duration: .5s; }
+  .bar:nth-child(2) { animation-delay: .1s } .bar:nth-child(3) { animation-delay: .2s } .bar:nth-child(4) { animation-delay: .3s }
+  .bar:nth-child(5) { animation-delay: .4s } .bar:nth-child(6) { animation-delay: .5s } .bar:nth-child(7) { animation-delay: .6s }
+  @keyframes hop { 0%, 100% { height: 8px; } 40% { height: 22px; } }
+
+  .status { margin: 0; font-size: 20px; font-weight: 700; text-align: center; min-height: 1.6em; }
+  .error .status { color: var(--error); font-size: 16px; }
+  .hint { margin: -10px 0 0; color: var(--ink-soft); font-size: 14px; text-align: center; min-height: 1.4em; }
+  .buttons { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn { font: inherit; font-size: 18px; font-weight: 900; border-radius: 999px; padding: 14px 28px; cursor: pointer; white-space: nowrap;
+         display: inline-flex; gap: 8px; align-items: center; border: 2px solid transparent; transition: transform .08s; }
+  .btn:active:not(:disabled) { transform: translateY(1px) scale(.98); }
+  .btn.start { background: var(--accent); color: var(--on-accent); box-shadow: 0 4px 0 var(--accent-deep); }
+  .btn.start:hover:not(:disabled) { background: var(--accent-deep); }
+  .btn.stop { background: var(--panel); color: var(--ink); border-color: var(--line); }
+  .btn.stop:hover:not(:disabled) { border-color: var(--ink-soft); }
+  .btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
+  @media (max-width: 420px) { .btn { font-size: 17px; padding: 12px 20px; } }
+
+  /* 会話の記録 */
+  .talk { display: grid; gap: 14px; align-content: start; }
+  /* スマホでは記録がボタンの下にあるので、新しい会話を上に出し、ページを流さない */
+  @media (max-width: 879px) { #log { display: flex; flex-direction: column-reverse; } }
+  .talk-head { margin: 0; font-size: 18px; font-weight: 900; }
+  .empty { background: var(--panel); border: 2px dashed var(--line); border-radius: 20px; padding: 28px 20px;
+           color: var(--ink-soft); text-align: center; line-height: 1.8; margin: 0; }
+  .turn { display: grid; gap: 8px; }
+  .bubble { margin: 0; max-width: min(560px, 88%); padding: 12px 16px; border-radius: 20px; line-height: 1.75; border: 2px solid; font-size: 17px; }
+  .bubble .who { display: block; font-size: 13px; font-weight: 700; color: var(--ink-soft); margin-bottom: 2px; }
+  .bubble.you { justify-self: end; background: var(--you); border-color: var(--you-edge); border-bottom-right-radius: 6px; }
+  .bubble.aya { justify-self: start; background: var(--aya); border-color: var(--aya-edge); border-bottom-left-radius: 6px; }
+  .times { justify-self: start; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; padding-left: 6px; }
+
+  /* せってい */
+  dialog { border: 0; padding: 0; border-radius: 24px; width: min(560px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  dialog::backdrop { background: rgba(20, 32, 52, .45); }
+  .sheet { padding: 22px 20px 20px; display: grid; gap: 14px; }
+  .sheet h2 { margin: 0; font-size: 20px; font-weight: 900; }
+  .sheet .note { margin: -6px 0 0; font-size: 14px; color: var(--ink-soft); }
+  .field { display: grid; gap: 6px; font-weight: 700; font-size: 14px; }
+  .field small { font-weight: 500; color: var(--ink-soft); }
+  .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  input, select, textarea { font: inherit; font-weight: 500; color: var(--ink); background: var(--paper); border: 2px solid var(--line);
+                            border-radius: 12px; padding: 10px 12px; min-width: 0; }
+  input:disabled, select:disabled, textarea:disabled { opacity: .6; }
+  textarea { min-height: 160px; resize: vertical; line-height: 1.6; }
+  .sheet .close { justify-self: end; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .speaking .mouth, .thinking .bar, .speaking .bar, .listening .ring.breath { animation: none; }
+    .ring, .bar { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="title">あやとおしゃべり</h1>
+    <button class="settings-btn" id="open-settings"><i class="ph-bold ph-gear-six" aria-hidden="true"></i>せってい</button>
+  </header>
+
+  <section class="stage idle" id="stage">
+    <div class="orb" id="orb" aria-hidden="true">
+      <span class="ring breath"></span><span class="ring"></span><span class="ring r2"></span>
+      <div class="face"><span class="eye l"></span><span class="eye r"></span><span class="cheek l"></span><span class="cheek r"></span><span class="mouth"></span></div>
+    </div>
+    <div class="bars" id="bars" aria-hidden="true"></div>
+    <p class="status" id="status" aria-live="polite">「はじめる」をおしてね</p>
+    <p class="hint" id="hint"></p>
+    <div class="buttons">
+      <button class="btn start" id="start"><i class="ph-bold ph-microphone" aria-hidden="true"></i>はじめる</button>
+      <button class="btn stop" id="stop" disabled><i class="ph-bold ph-stop" aria-hidden="true"></i>おわる</button>
+    </div>
+  </section>
+
+  <section class="talk">
+    <h2 class="talk-head">おしゃべりのきろく</h2>
+    <div id="log" class="talk"></div>
+  </section>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="sheet">
+    <h2>せってい</h2>
+    <p class="note" id="settings-note">おしゃべりをおわってから変えられます</p>
+    <div class="row">
+      <label class="field">キャラクターの名前<input id="name" maxlength="20"></label>
+      <label class="field">声<select id="voice"></select></label>
+    </div>
+    <div class="row">
+      <label class="field">声のスタイル<select id="style"></select></label>
+      <label class="field">子どものよび名<small>「さん」は自動でつきます。空欄ならよばない</small><input id="child" maxlength="20" placeholder="例: ゆうと"></label>
+    </div>
+    <label class="field">役割<small>性格・話し方・立場など。空欄なら初期設定</small><textarea id="role" maxlength="1000"></textarea></label>
+    <button class="btn stop close">とじる</button>
+  </form>
+</dialog>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const name = () => $("name").value.trim() || "あや";
+  // 段階ごとの、子ども向けの表示
+  const PHASE_TEXT = {
+    idle: () => ["「はじめる」をおしてね", ""],
+    loading: () => ["じゅんびしているよ", "ちょっとまってね"],
+    calibrating: () => ["じゅんびしているよ", "1びょうだけ しずかにしてね"],
+    listening: () => ["きいているよ", `${name()}に はなしかけてね`],
+    thinking: () => ["かんがえているよ", ""],
+    speaking: () => [`${name()}が はなしているよ`, ""],
+    stopping: () => ["おわりにしているよ", ""],
+  };
+  const BAR_SHAPE = [.55, .8, .95, 1, .95, .8, .55];
+  BAR_SHAPE.forEach(() => $("bars").append(Object.assign(document.createElement("span"), { className: "bar" })));
+
+  // 話し終わりの判定。サーバーで録音していたときと同じ値
+  const CALIBRATE = 1;      // 秒。最初にまわりの音を測る
+  const SILENCE_END = .7;   // 秒。この長さ黙ったら話し終わり
+  const MIN_SPEECH = .4;    // 秒。これより短い音は咳や物音として捨てる
+  const MAX_SPEECH = 15;
+  const PRE_ROLL = .3;      // 秒。話し始めの音が切れないよう、直前の音も含める
+  const AFTER_SPEAK = .3;   // 秒。返事の声の残りをマイクで拾わないよう、再生後すこし待ってから聞く
+  // 子どもが話しやすいよう、黙っていたらキャラクターから話しかける
+  const FIRST_WAIT = 6;     // 秒。はじめてから最初に話しかけるまで
+  const NEXT_WAIT = 10;     // 秒。返事のあと、また話しかけるまで
+  const MAX_NUDGES = 2;     // 子どもが話すまでに、続けて話しかける回数
+
+  let phase = "idle", target = 0, level = 0, voices = [];
+  let audio = null;  // { ctx, stream, proc }
+  let calib = null, threshold = .01, pre = [], speech = null, silent = 0;
+  let quiet = 0, nudges = 0, turns = 0, fillers = [];
+
+  async function call(path, body) {
+    const res = await fetch(path, { method: body ? "POST" : "GET",
+      headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `サーバーのエラー (${res.status})`);
+    return data;
+  }
+
+  function setPhase(p, message) {
+    phase = p;
+    $("stage").className = "stage " + p;
+    const [status, hint] = p === "error" ? [message, "もう一度「はじめる」をおしてね"] : PHASE_TEXT[p]();
+    $("status").textContent = status;
+    $("hint").textContent = hint;
+    const running = p !== "idle" && p !== "error";
+    $("start").disabled = running;
+    $("stop").disabled = !running;
+    for (const id of ["name", "voice", "style", "child", "role"]) $(id).disabled = running;
+    $("settings-note").hidden = !running;
+    if (p !== "listening") target = 0;
+  }
+
+  // 吹き出しを先に作り、返事の文が届くたびに書き足す
+  function startTurn(you, who) {
+    turns++;
+    $("log").querySelector(".empty")?.remove();
+    const div = document.createElement("div");
+    div.className = "turn";
+    const bubble = (cls, label) => {
+      const p = document.createElement("p");
+      p.className = "bubble " + cls;
+      const w = document.createElement("span");
+      w.className = "who";
+      w.textContent = label;
+      p.append(w);
+      div.append(p);
+      return p;
+    };
+    if (you) bubble("you", "あなた").append(you);
+    const reply = bubble("aya", who);
+    const times = document.createElement("span");
+    times.className = "times";
+    div.append(times);
+    $("log").append(div);
+    if (matchMedia("(min-width: 880px)").matches) div.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return { reply, times };
+  }
+
+  const rms = (x) => Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length);
+
+  function listen() {
+    pre = [];
+    speech = null;
+    quiet = 0;
+    setPhase("listening");
+  }
+
+  // マイクの音を少しずつ受け取り、話し始めと話し終わりを判定する
+  function onFrame(input) {
+    const frame = new Float32Array(input);
+    const sec = frame.length / audio.ctx.sampleRate;
+    if (phase === "calibrating") {
+      calib.sumSq += frame.reduce((sum, v) => sum + v * v, 0);
+      calib.n += frame.length;
+      if (calib.n / audio.ctx.sampleRate >= CALIBRATE) {
+        threshold = Math.max(Math.sqrt(calib.sumSq / calib.n) * 3, .01);
+        listen();
+      }
+      return;
+    }
+    if (phase !== "listening") return;
+    const volume = rms(frame);
+    target = Math.min(1, volume / (threshold * 4));
+    const loud = volume > threshold;
+    if (!speech) {
+      pre.push(frame);
+      while (pre.length * sec > PRE_ROLL) pre.shift();
+      if (loud) { speech = pre.slice(); silent = 0; return; }
+      quiet += sec;
+      if (quiet >= (turns === 0 ? FIRST_WAIT : NEXT_WAIT) && nudges < MAX_NUDGES) nudge();
+      return;
+    }
+    speech.push(frame);
+    silent = loud ? 0 : silent + sec;
+    const total = speech.length * sec;
+    if (silent >= SILENCE_END || total >= MAX_SPEECH) {
+      const chunks = speech;
+      speech = null;
+      pre = [];
+      if (total - silent >= MIN_SPEECH) send(chunks);
+    }
+  }
+
+  async function send(chunks) {
+    setPhase("thinking");
+    const buf = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+    let at = 0;
+    for (const c of chunks) { buf.set(c, at); at += c.length; }
+    const current = audio;
+    const filler = fillers[Math.floor(Math.random() * fillers.length)];
+    try {
+      await converse("/utterance", { method: "POST", body: buf.buffer,
+        headers: { "Content-Type": "application/octet-stream", "X-Sample-Rate": String(current.ctx.sampleRate) } }, current, filler);
+    } catch (e) {
+      if (audio === current) fail(e.message);
+    }
+  }
+
+  async function nudge() {
+    nudges++;
+    setPhase("thinking");
+    const current = audio;
+    try {
+      await converse("/nudge", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, current, null);
+    } catch (e) {
+      if (audio === current) fail(e.message);
+    }
+  }
+
+  function playAudio(current, b64) {
+    return new Promise(async (resolve) => {
+      try {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const source = current.ctx.createBufferSource();
+        source.buffer = await current.ctx.decodeAudioData(bytes.buffer);
+        source.connect(current.ctx.destination);
+        source.onended = resolve;
+        source.start();
+      } catch (e) {
+        resolve();  // 「おわる」で AudioContext が閉じられたとき
+      }
+    });
+  }
+
+  // サーバーから届く出来事(文字にした内容・1文ずつの声・終わり)を順に処理し、声は順番に流す
+  async function converse(path, init, current, filler) {
+    let queue = Promise.resolve();
+    const enqueue = (b64, speaking) => {
+      queue = queue.then(() => {
+        if (audio !== current) return;
+        if (speaking) setPhase("speaking");
+        return playAudio(current, b64);
+      });
+    };
+    if (filler) enqueue(filler, false);
+    const res = await fetch(path, init);
+    if (!res.ok) {
+      const r = await res.json().catch(() => ({}));
+      throw new Error(r.error || `サーバーのエラー (${res.status})`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", view = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (value) buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const e = JSON.parse(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+        if (audio !== current) return;  // 待っている間に「おわる」が押された
+        if (e.type === "error") throw new Error(e.error);
+        if (e.type === "empty") { await queue; return listen(); }
+        if (e.type === "you") { nudges = 0; view = startTurn(e.text, e.name); }
+        if (e.type === "audio") {
+          view = view || startTurn("", name());
+          view.reply.append(e.text);
+          enqueue(e.audio, true);
+        }
+        if (e.type === "done" && view) view.times.textContent = e.times;
+      }
+      if (done) break;
+    }
+    await queue;
+    setTimeout(() => { if (audio === current) listen(); }, AFTER_SPEAK * 1000);
+  }
+
+  async function start() {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("このページではマイクがつかえないよ。iPhone は https:// のアドレスで開いてね");
+      }
+      // iPhone は、ボタンを押した直後に作った AudioContext でないと音を出せない
+      const ctx = new AudioContext();
+      await ctx.resume();
+      setPhase("loading");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+        .catch(() => { throw new Error("マイクがつかえないよ。ブラウザの設定でマイクをゆるしてね"); });
+      ({ fillers } = await call("/start", { name: $("name").value, role: $("role").value, voice: $("voice").value,
+                                            style: $("style").value, child: $("child").value }));
+      const proc = ctx.createScriptProcessor(2048, 1, 1);
+      proc.onaudioprocess = (e) => onFrame(e.inputBuffer.getChannelData(0));
+      ctx.createMediaStreamSource(stream).connect(proc);
+      // つながっていないと音を受け取れない。出力は無音のままなのでスピーカーからは鳴らない
+      proc.connect(ctx.destination);
+      audio = { ctx, stream, proc };
+      calib = { sumSq: 0, n: 0 };
+      nudges = 0;
+      turns = 0;
+      setPhase("calibrating");
+    } catch (e) {
+      fail(e.message);
+    }
+  }
+
+  function release() {
+    if (!audio) return;
+    audio.proc.disconnect();
+    audio.stream.getTracks().forEach((t) => t.stop());
+    audio.ctx.close();
+    audio = null;
+  }
+
+  async function stop() {
+    release();
+    setPhase("idle");
+    try { await call("/stop", {}); } catch (e) {}
+  }
+
+  function fail(message) {
+    release();
+    setPhase("error", message);
+    call("/stop", {}).catch(() => {});
+  }
+
+  (function animate() {
+    level += (target - level) * .35;
+    $("orb").style.setProperty("--level", level.toFixed(3));
+    const listening = phase === "listening";
+    [...$("bars").children].forEach((b, i) => {
+      b.style.height = listening ? `${8 + level * 36 * BAR_SHAPE[i] * (.75 + Math.random() * .25)}px` : "";
+    });
+    requestAnimationFrame(animate);
+  })();
+
+  const options = (select, items) => select.replaceChildren(...items.map(([value, label]) => new Option(label, value)));
+  function showStyles(preferred) {
+    const v = voices.find((x) => x.file === $("voice").value);
+    options($("style"), v ? v.styles.map((s) => [s, s]) : []);
+    if (v && v.styles.includes(preferred)) $("style").value = preferred;
+  }
+  call("/defaults").then((d) => {
+    $("name").value = d.name;
+    $("role").value = d.role;
+    $("child").value = d.child;
+    voices = d.voices;
+    options($("voice"), voices.map((v) => [v.file, v.name]));
+    showStyles(d.style);
+    $("title").textContent = `${name()}とおしゃべり`;
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = `ここに ${name()}との おしゃべりが出てくるよ。「はじめる」をおして 話しかけてみてね。`;
+    $("log").append(p);
+  }).catch(() => setPhase("error", "サーバーにつながりません。voice_app.py が動いているか確かめてね"));
+  $("name").oninput = () => { $("title").textContent = `${name()}とおしゃべり`; };
+  $("voice").onchange = () => showStyles("ノーマル");
+  $("open-settings").onclick = () => $("settings").showModal();
+  $("start").onclick = start;
+  $("stop").onclick = stop;
+  setPhase("idle");
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# 個人の設定・秘密の鍵・大きなファイルは上げない
+.env
+certs/
+voices/*.aivmx
+.venv/
+__pycache__/
+.DS_Store

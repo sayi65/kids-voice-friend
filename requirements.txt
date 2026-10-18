@@ -1,0 +1,6 @@
+mlx-whisper==0.4.3
+numpy==2.5.4
+onnxruntime==1.31.0
+aivmlib==1.2.2
+# AivisSpeech Engine が使っているのと同じ版(.aivmx の声を読み込むため)
+style-bert-vits2 @ git+https://github.com/tsukumijima/Style-Bert-VITS2@9fc7f5a082de23200b72a70d672d499da71eac5b
